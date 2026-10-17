@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+
+import React, { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, GraduationCap, Home, ShoppingBag, Search, Calendar, LayoutDashboard, User, HelpCircle, RefreshCw, Sun, Moon } from 'lucide-react';
+import {
+  Menu, X, GraduationCap, Home, ShoppingBag, Search,
+  Calendar, LayoutDashboard, User, HelpCircle, RefreshCw,
+  Sun, Moon, LogOut, LogIn
+} from 'lucide-react';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase';
 import { useTheme } from '../context/ThemeContext';
 
 const navLinks = [
@@ -17,8 +24,65 @@ const navLinks = [
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [error, setError] = useState('');
+
   const location = useLocation();
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, currentUser => {
+      setUser(currentUser);
+      setAuthReady(true);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    setIsOpen(false);
+    setError('');
+  }, [location.pathname]);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    setError('');
+
+    try {
+      await signOut(auth);
+      setIsOpen(false);
+      navigate('/', { replace: true });
+    } catch (err) {
+      console.error('Logout failed:', err);
+      setError('Logout failed. Please try again.');
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  const ThemeButton = () => (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={toggleTheme}
+      aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+      title={theme === 'light' ? 'Dark mode' : 'Light mode'}
+    >
+      <motion.div
+        key={theme}
+        initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
+        animate={{ rotate: 0, opacity: 1, scale: 1 }}
+        transition={{ duration: 0.3 }}
+        className="theme-toggle-icon"
+      >
+        {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+      </motion.div>
+    </button>
+  );
+
+  if (location.pathname === '/login') return null;
 
   return (
     <nav className="navbar">
@@ -29,17 +93,17 @@ const Navbar = () => {
         </Link>
 
         <div className="navbar-desktop">
-          {navLinks.map((link) => {
-            const Icon = link.icon;
-            const isActive = location.pathname === link.to;
+          {navLinks.map(({ to, label, icon: Icon }) => {
+            const isActive = location.pathname === to;
+
             return (
               <Link
-                key={link.to}
-                to={link.to}
+                key={to}
+                to={to}
                 className={`navbar-link ${isActive ? 'active' : ''}`}
               >
                 <Icon size={16} />
-                <span>{link.label}</span>
+                <span>{label}</span>
                 {isActive && (
                   <motion.div
                     layoutId="navbar-indicator"
@@ -50,48 +114,46 @@ const Navbar = () => {
               </Link>
             );
           })}
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            title={theme === 'light' ? 'Dark mode' : 'Light mode'}
-          >
-            <motion.div
-              key={theme}
-              initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
-              animate={{ rotate: 0, opacity: 1, scale: 1 }}
-              exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              className="theme-toggle-icon"
-            >
-              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-            </motion.div>
-          </button>
+
+          <ThemeButton />
+
+          {authReady && (
+            user ? (
+              <button
+                type="button"
+                className="navbar-logout"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                title="Logout"
+              >
+                <LogOut size={17} />
+                <span>{loggingOut ? 'Logging out...' : 'Logout'}</span>
+              </button>
+            ) : (
+              <Link to="/login" className="navbar-logout">
+                <LogIn size={17} />
+                <span>Login</span>
+              </Link>
+            )
+          )}
         </div>
 
         <div className="navbar-actions">
+          <ThemeButton />
           <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            title={theme === 'light' ? 'Dark mode' : 'Light mode'}
+            type="button"
+            className="navbar-hamburger"
+            onClick={() => setIsOpen(previous => !previous)}
+            aria-label={isOpen ? 'Close menu' : 'Open menu'}
           >
-            <motion.div
-              key={theme}
-              initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
-              animate={{ rotate: 0, opacity: 1, scale: 1 }}
-              exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              className="theme-toggle-icon"
-            >
-              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-            </motion.div>
-          </button>
-          <button className="navbar-hamburger" onClick={() => setIsOpen(!isOpen)}>
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
       </div>
+
+      {error && (
+        <p role="alert" className="navbar-error">{error}</p>
+      )}
 
       <AnimatePresence>
         {isOpen && (
@@ -101,21 +163,42 @@ const Navbar = () => {
             exit={{ opacity: 0, height: 0 }}
             className="navbar-mobile"
           >
-            {navLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive = location.pathname === link.to;
-              return (
+            {navLinks.map(({ to, label, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className={`navbar-mobile-link ${
+                  location.pathname === to ? 'active' : ''
+                }`}
+                onClick={() => setIsOpen(false)}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+              </Link>
+            ))}
+
+            {authReady && (
+              user ? (
+                <button
+                  type="button"
+                  className="navbar-mobile-link"
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                >
+                  <LogOut size={18} />
+                  <span>{loggingOut ? 'Logging out...' : 'Logout'}</span>
+                </button>
+              ) : (
                 <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`navbar-mobile-link ${isActive ? 'active' : ''}`}
+                  to="/login"
+                  className="navbar-mobile-link"
                   onClick={() => setIsOpen(false)}
                 >
-                  <Icon size={18} />
-                  <span>{link.label}</span>
+                  <LogIn size={18} />
+                  <span>Login</span>
                 </Link>
-              );
-            })}
+              )
+            )}
           </motion.div>
         )}
       </AnimatePresence>
