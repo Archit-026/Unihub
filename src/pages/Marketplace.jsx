@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ShoppingBag, Plus, Pencil, Trash2, X } from 'lucide-react';
 import {
@@ -19,6 +19,7 @@ import CategoryFilter from '../components/CategoryFilter';
 import ProductCard from '../components/ProductCard';
 import { categories } from '../data/mockData';
 import { auth, db } from '../firebase';
+import { getRecommendations } from '../utils/recommendations';
 
 const emptyForm = {
   title: '',
@@ -74,6 +75,17 @@ const Marketplace = () => {
 
     return matchSearch && matchCategory;
   });
+  
+const recommendations = useMemo(
+  () =>
+    getRecommendations(products, {
+      search,
+      category: activeCategory,
+      limit: 4,
+    }),
+  [products, search, activeCategory]
+);
+
 
   const openCreateForm = () => {
     setForm({
@@ -221,6 +233,31 @@ const Marketplace = () => {
           onChange={setActiveCategory}
         />
       </div>
+      
+{recommendations.length > 0 && (
+  <section
+    className="marketplace-recommendations"
+    aria-labelledby="recommendations-title"
+  >
+    <div className="page-header">
+      <div>
+        <h2 id="recommendations-title">Recommended for You</h2>
+        <p className="page-subtitle">
+          Ranked by your selected category and search keywords.
+        </p>
+      </div>
+    </div>
+
+    <div className="products-grid">
+      {recommendations.map((product, index) => (
+        <div key={product.id}>
+          <ProductCard product={product} index={index} />
+        </div>
+      ))}
+    </div>
+  </section>
+)}
+
 
       <div style={{ margin: '20px 0' }}>
         {auth.currentUser ? (
