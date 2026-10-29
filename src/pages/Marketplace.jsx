@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ShoppingBag, Plus, Pencil, Trash2, X } from 'lucide-react';
 import {
@@ -19,7 +19,6 @@ import CategoryFilter from '../components/CategoryFilter';
 import ProductCard from '../components/ProductCard';
 import { categories } from '../data/mockData';
 import { auth, db } from '../firebase';
-import { getRecommendations } from '../utils/recommendations';
 
 const emptyForm = {
   title: '',
@@ -32,6 +31,7 @@ const Marketplace = () => {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [products, setProducts] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -76,15 +76,51 @@ const Marketplace = () => {
     return matchSearch && matchCategory;
   });
   
-const recommendations = useMemo(
-  () =>
-    getRecommendations(products, {
-      search,
-      category: activeCategory,
-      limit: 4,
-    }),
-  [products, search, activeCategory]
-);
+useEffect(() => {
+  const controller = new AbortController();
+
+  async function fetchRecommendations() {
+    if (!search.trim() && activeCategory === 'All') {
+      setRecommendations([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        'http://localhost:4000/api/recommendations',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            products,
+            search,
+            category: activeCategory,
+            limit: 4,
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Recommendation API request failed');
+      }
+
+      const data = await response.json();
+      setRecommendations(data.recommendations || []);
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Recommendation API error:', error);
+        setRecommendations([]);
+      }
+    }
+  }
+
+  fetchRecommendations();
+
+  return () => controller.abort();
+}, [products, search, activeCategory]);
 
 
   const openCreateForm = () => {
