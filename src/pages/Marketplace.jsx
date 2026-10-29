@@ -87,7 +87,7 @@ useEffect(() => {
 
     try {
       const response = await fetch(
-        'http://localhost:4000/api/recommendations',
+        'https://unihub-xd9r.onrender.com/api/recommendations',
         {
           method: 'POST',
           headers: {
