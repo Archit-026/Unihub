@@ -1,16 +1,19 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
 import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  updateDoc,
+  updateDoc
 } from 'firebase/firestore';
+
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
 
@@ -22,7 +25,7 @@ const initialForm = {
   location: '',
   status: 'lost',
   latitude: '',
-  longitude: '',
+  longitude: ''
 };
 
 function distanceInKm(lat1, lon1, lat2, lon2) {
@@ -71,11 +74,13 @@ export default function LostFound() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  // Listen for authentication changes
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, setUser);
     return unsubscribeAuth;
   }, []);
 
+  // Load Lost & Found reports
   useEffect(() => {
     const reportsQuery = query(
       collection(db, COLLECTION_NAME),
@@ -88,17 +93,20 @@ export default function LostFound() {
         setReports(
           snapshot.docs.map((item) => ({
             id: item.id,
-            ...item.data(),
+            ...item.data()
           }))
         );
+
         setLoading(false);
         setError('');
       },
       (err) => {
         console.error('Lost & Found listener error:', err);
+
         setError(
           'Could not load reports. Check your Firestore rules and internet connection.'
         );
+
         setLoading(false);
       }
     );
@@ -106,6 +114,7 @@ export default function LostFound() {
     return unsubscribe;
   }, []);
 
+  // Search, tab and distance filtering
   const filteredReports = useMemo(() => {
     const term = search.trim().toLowerCase();
 
@@ -117,7 +126,7 @@ export default function LostFound() {
         report.title,
         report.description,
         report.location,
-        report.status,
+        report.status
       ]
         .filter(Boolean)
         .join(' ')
@@ -156,11 +165,17 @@ export default function LostFound() {
     });
   }, [reports, activeTab, search, nearbyOnly, myLocation, radiusKm]);
 
+  // Update form fields
   const updateField = (event) => {
     const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value
+    }));
   };
 
+  // Capture current location
   const getMyLocation = () => {
     setError('');
     setNotice('');
@@ -176,36 +191,53 @@ export default function LostFound() {
         const longitude = position.coords.longitude;
 
         setMyLocation({ latitude, longitude });
+
         setForm((previous) => ({
           ...previous,
           latitude: String(latitude),
-          longitude: String(longitude),
+          longitude: String(longitude)
         }));
+
         setNotice('Location captured successfully.');
       },
       (geoError) => {
         console.error('Geolocation error:', geoError);
+
         setError(
           'Location access failed. Allow location permission in your browser and try again.'
         );
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
     );
   };
 
+  // Reset form
   const resetForm = () => {
     setForm(initialForm);
     setEditingId(null);
     setShowForm(false);
   };
 
+  // Create or update report
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
     setNotice('');
 
-    if (!user) {
-      setError('Please log in with your verified college account to report an item.');
+    const email = user?.email?.toLowerCase() || '';
+
+    if (
+      !user ||
+      !user.emailVerified ||
+      !email.endsWith('@mitsgwl.ac.in')
+    ) {
+      setError(
+        'Please log in with your verified MITS college account to report an item.'
+      );
       return;
     }
 
@@ -214,12 +246,20 @@ export default function LostFound() {
     const location = form.location.trim();
 
     if (!title || !description || !location) {
-      setError('Please complete the title, description, and location fields.');
+      setError(
+        'Please complete the title, description, and location fields.'
+      );
+      return;
+    }
+
+    if (!['lost', 'found'].includes(form.status)) {
+      setError('Please select a valid report type.');
       return;
     }
 
     const latitude =
       form.latitude.trim() === '' ? null : Number(form.latitude);
+
     const longitude =
       form.longitude.trim() === '' ? null : Number(form.longitude);
 
@@ -238,10 +278,14 @@ export default function LostFound() {
 
     if (
       latitude !== null &&
-      (latitude < -90 || latitude > 90 ||
-        longitude < -180 || longitude > 180)
+      (latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180)
     ) {
-      setError('Latitude must be between -90 and 90, and longitude between -180 and 180.');
+      setError(
+        'Latitude must be between -90 and 90, and longitude between -180 and 180.'
+      );
       return;
     }
 
@@ -252,28 +296,36 @@ export default function LostFound() {
       status: form.status,
       latitude,
       longitude,
-      updatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     };
 
     setSubmitting(true);
 
     try {
       if (editingId) {
-        const existing = reports.find((item) => item.id === editingId);
+        const existing = reports.find(
+          (item) => item.id === editingId
+        );
 
         if (!existing || existing.ownerId !== user.uid) {
           throw new Error('You can only edit reports you created.');
         }
 
-        await updateDoc(doc(db, COLLECTION_NAME, editingId), payload);
+        await updateDoc(
+          doc(db, COLLECTION_NAME, editingId),
+          {
+            ...payload,
+            reporterEmail: deleteField()
+          }
+        );
+
         setNotice('Your report was updated.');
       } else {
         await addDoc(collection(db, COLLECTION_NAME), {
           ...payload,
           ownerId: user.uid,
-          reporter: user.displayName || user.email || 'College student',
-          reporterEmail: user.email || '',
-          createdAt: serverTimestamp(),
+          reporter: user.displayName || 'College student',
+          createdAt: serverTimestamp()
         });
 
         setNotice('Your report was published.');
@@ -282,6 +334,7 @@ export default function LostFound() {
       resetForm();
     } catch (err) {
       console.error('Saving Lost & Found report failed:', err);
+
       setError(
         err.code === 'permission-denied'
           ? 'Firestore denied this action. Check the Lost & Found security rules.'
@@ -292,6 +345,7 @@ export default function LostFound() {
     }
   };
 
+  // Start editing a report
   const startEdit = (report) => {
     if (!user || report.ownerId !== user.uid) return;
 
@@ -303,16 +357,21 @@ export default function LostFound() {
       latitude:
         report.latitude == null ? '' : String(report.latitude),
       longitude:
-        report.longitude == null ? '' : String(report.longitude),
+        report.longitude == null ? '' : String(report.longitude)
     });
 
     setEditingId(report.id);
     setShowForm(true);
     setError('');
     setNotice('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
 
+  // Delete a report
   const handleDelete = async (report) => {
     if (!user || report.ownerId !== user.uid) return;
 
@@ -330,6 +389,7 @@ export default function LostFound() {
       setNotice('Report deleted.');
     } catch (err) {
       console.error('Deleting Lost & Found report failed:', err);
+
       setError(
         err.code === 'permission-denied'
           ? 'Firestore denied deletion. Check the Lost & Found security rules.'
@@ -343,7 +403,9 @@ export default function LostFound() {
       <section className="lost-found-header">
         <div>
           <p className="lost-found-eyebrow">CAMPUS COMMUNITY</p>
+
           <h1>Lost &amp; Found</h1>
+
           <p>
             Help your fellow students reunite with their missing belongings.
           </p>
@@ -353,8 +415,14 @@ export default function LostFound() {
           type="button"
           className="lost-found-primary-btn"
           onClick={() => {
-            if (!user) {
-              setError('Please log in with your verified college account to report an item.');
+            if (
+              !user ||
+              !user.emailVerified ||
+              !user.email?.toLowerCase().endsWith('@mitsgwl.ac.in')
+            ) {
+              setError(
+                'Please log in with your verified college account to report an item.'
+              );
               return;
             }
 
@@ -367,29 +435,43 @@ export default function LostFound() {
             }
           }}
         >
-          {showForm && !editingId ? 'Cancel report' : '+ Report an item'}
+          {showForm && !editingId
+            ? 'Cancel report'
+            : '+ Report an item'}
         </button>
       </section>
 
       {error && (
-        <div className="lost-found-message lost-found-error" role="alert">
+        <div
+          className="lost-found-message lost-found-error"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
       {notice && (
-        <div className="lost-found-message lost-found-success" role="status">
+        <div
+          className="lost-found-message lost-found-success"
+          role="status"
+        >
           {notice}
         </div>
       )}
 
       {showForm && (
         <form className="lost-found-form" onSubmit={handleSubmit}>
-          <h2>{editingId ? 'Edit your report' : 'Report an item'}</h2>
+          <h2>
+            {editingId ? 'Edit your report' : 'Report an item'}
+          </h2>
 
           <label>
             Report type
-            <select name="status" value={form.status} onChange={updateField}>
+            <select
+              name="status"
+              value={form.status}
+              onChange={updateField}
+            >
               <option value="lost">I lost something</option>
               <option value="found">I found something</option>
             </select>
@@ -479,6 +561,7 @@ export default function LostFound() {
             >
               Cancel
             </button>
+
             <button
               type="submit"
               className="lost-found-primary-btn"
@@ -503,11 +586,15 @@ export default function LostFound() {
           aria-label="Search Lost and Found reports"
         />
 
-        <div className="lost-found-tabs" role="group" aria-label="Filter by report type">
+        <div
+          className="lost-found-tabs"
+          role="group"
+          aria-label="Filter by report type"
+        >
           {[
             { value: 'all', label: 'All reports' },
             { value: 'lost', label: 'Lost' },
-            { value: 'found', label: 'Found' },
+            { value: 'found', label: 'Found' }
           ].map((tab) => (
             <button
               key={tab.value}
@@ -536,9 +623,12 @@ export default function LostFound() {
             className="lost-found-secondary-btn"
             onClick={() => {
               if (myLocation) {
-                setNotice('Your current location is ready for distance filtering.');
+                setNotice(
+                  'Your current location is ready for distance filtering.'
+                );
                 return;
               }
+
               getMyLocation();
             }}
           >
@@ -548,12 +638,15 @@ export default function LostFound() {
           {nearbyOnly && (
             <label className="lost-found-radius">
               Within {radiusKm} km
+
               <input
                 type="range"
                 min="1"
                 max="25"
                 value={radiusKm}
-                onChange={(event) => setRadiusKm(Number(event.target.value))}
+                onChange={(event) =>
+                  setRadiusKm(Number(event.target.value))
+                }
               />
             </label>
           )}
@@ -574,18 +667,26 @@ export default function LostFound() {
         </div>
 
         {loading ? (
-          <p className="lost-found-empty">Loading campus reports...</p>
+          <p className="lost-found-empty">
+            Loading campus reports...
+          </p>
         ) : filteredReports.length === 0 ? (
           <div className="lost-found-empty">
             <h3>No matching reports</h3>
-            <p>Try another search or filter, or report an item to help the campus.</p>
+            <p>
+              Try another search or filter, or report an item to help the campus.
+            </p>
           </div>
         ) : (
           <div className="lost-found-grid">
             {filteredReports.map((report) => {
-              const isOwner = Boolean(user && report.ownerId === user.uid);
+              const isOwner = Boolean(
+                user && report.ownerId === user.uid
+              );
+
               const hasCoordinates =
-                report.latitude != null && report.longitude != null;
+                report.latitude != null &&
+                report.longitude != null;
 
               const distance =
                 myLocation && hasCoordinates
@@ -598,41 +699,54 @@ export default function LostFound() {
                   : null;
 
               return (
-                <article className="lost-found-card" key={report.id}>
+                <article
+                  className="lost-found-card"
+                  key={report.id}
+                >
                   <div className="lost-found-card-top">
                     <span
                       className={`lost-found-status ${
-                        report.status === 'found' ? 'status-found' : 'status-lost'
+                        report.status === 'found'
+                          ? 'status-found'
+                          : 'status-lost'
                       }`}
                     >
-                      {report.status === 'found' ? 'Found item' : 'Lost item'}
+                      {report.status === 'found'
+                        ? 'Found item'
+                        : 'Lost item'}
                     </span>
+
                     <span className="lost-found-date">
                       {formatDate(report.createdAt || report.date)}
                     </span>
                   </div>
 
                   <h3>{report.title || 'Untitled item'}</h3>
+
                   <p className="lost-found-description">
                     {report.description || 'No description provided.'}
                   </p>
 
                   <div className="lost-found-card-meta">
                     <p>
-                      <span aria-hidden="true">📍</span> {report.location || 'Location not provided'}
+                      <span aria-hidden="true">📍</span>{' '}
+                      {report.location || 'Location not provided'}
                     </p>
+
                     <p>
                       <span aria-hidden="true">👤</span>{' '}
                       {report.reporter || 'College student'}
                     </p>
-                    {distance !== null && Number.isFinite(distance) && (
-                      <p>
-                        <span aria-hidden="true">↔</span>{' '}
-                        {distance < 1
-                          ? `${Math.round(distance * 1000)} m away`
-                          : `${distance.toFixed(1)} km away`}
-                      </p>
-                    )}
+
+                    {distance !== null &&
+                      Number.isFinite(distance) && (
+                        <p>
+                          <span aria-hidden="true">↔</span>{' '}
+                          {distance < 1
+                            ? `${Math.round(distance * 1000)} m away`
+                            : `${distance.toFixed(1)} km away`}
+                        </p>
+                      )}
                   </div>
 
                   {isOwner && (
@@ -644,6 +758,7 @@ export default function LostFound() {
                       >
                         Edit
                       </button>
+
                       <button
                         type="button"
                         className="lost-found-delete-btn"

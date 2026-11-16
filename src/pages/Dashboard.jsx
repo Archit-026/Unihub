@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingBag, Calendar, Search, Award,
@@ -22,29 +22,39 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState('');
 
+  const isCollegeUser = (currentUser) =>
+    currentUser?.emailVerified &&
+    currentUser.email?.toLowerCase().endsWith('@mitsgwl.ac.in');
+
   useEffect(() => {
-    let unsubscribeListings;
-    let unsubscribeEvents;
+    let unsubscribeListings = null;
+    let unsubscribeEvents = null;
+    let active = true;
 
     const unsubscribeAuth = onAuthStateChanged(auth, currentUser => {
-      if (unsubscribeListings) unsubscribeListings();
-      if (unsubscribeEvents) unsubscribeEvents();
+      if (unsubscribeListings) {
+        unsubscribeListings();
+        unsubscribeListings = null;
+      }
+
+      if (unsubscribeEvents) {
+        unsubscribeEvents();
+        unsubscribeEvents = null;
+      }
+
+      if (!active) return;
 
       setUser(currentUser);
+      setListings([]);
+      setEvents([]);
+      setDataError('');
 
-      if (
-        !currentUser ||
-        !currentUser.emailVerified ||
-        !currentUser.email?.toLowerCase().endsWith('@mitsgwl.ac.in')
-      ) {
-        setListings([]);
-        setEvents([]);
+      if (!isCollegeUser(currentUser)) {
         setLoading(false);
         return;
       }
 
       setLoading(true);
-      setDataError('');
 
       const listingsQuery = query(
         collection(db, 'marketplace'),
@@ -60,19 +70,35 @@ const Dashboard = () => {
       let eventsLoaded = false;
 
       const finishLoading = () => {
-        if (listingsLoaded && eventsLoaded) setLoading(false);
+        if (listingsLoaded && eventsLoaded && active) {
+          setLoading(false);
+        }
       };
 
       unsubscribeListings = onSnapshot(
         listingsQuery,
         snapshot => {
-          setListings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+          if (!active) return;
+
+          setListings(
+            snapshot.docs.map(d => ({
+              id: d.id,
+              ...d.data()
+            }))
+          );
+
           listingsLoaded = true;
           finishLoading();
         },
         error => {
           console.error('Marketplace dashboard error:', error);
-          setDataError('Could not load marketplace statistics. Check Firestore permissions.');
+
+          if (!active) return;
+
+          setDataError(
+            'Could not load marketplace statistics. Check Firestore permissions.'
+          );
+
           listingsLoaded = true;
           finishLoading();
         }
@@ -81,13 +107,27 @@ const Dashboard = () => {
       unsubscribeEvents = onSnapshot(
         eventsQuery,
         snapshot => {
-          setEvents(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+          if (!active) return;
+
+          setEvents(
+            snapshot.docs.map(d => ({
+              id: d.id,
+              ...d.data()
+            }))
+          );
+
           eventsLoaded = true;
           finishLoading();
         },
         error => {
           console.error('Events dashboard error:', error);
-          setDataError('Could not load event statistics. Check Firestore permissions.');
+
+          if (!active) return;
+
+          setDataError(
+            'Could not load event statistics. Check Firestore permissions.'
+          );
+
           eventsLoaded = true;
           finishLoading();
         }
@@ -95,7 +135,9 @@ const Dashboard = () => {
     });
 
     return () => {
+      active = false;
       unsubscribeAuth();
+
       if (unsubscribeListings) unsubscribeListings();
       if (unsubscribeEvents) unsubscribeEvents();
     };
@@ -136,8 +178,26 @@ const Dashboard = () => {
   if (!user) {
     return (
       <div className="page page-dashboard">
-        <h1 className="page-title"><LayoutDashboard size={28} /> Dashboard</h1>
-        <p>Please sign in with your verified MITS college account to view your dashboard.</p>
+        <h1 className="page-title">
+          <LayoutDashboard size={28} /> Dashboard
+        </h1>
+        <p>
+          Please sign in with your verified MITS college account to view your dashboard.
+        </p>
+        <Link to="/login">Login with Google</Link>
+      </div>
+    );
+  }
+
+  if (!isCollegeUser(user)) {
+    return (
+      <div className="page page-dashboard">
+        <h1 className="page-title">
+          <LayoutDashboard size={28} /> Dashboard
+        </h1>
+        <p role="alert">
+          Access restricted. Please sign in with a verified MITS college email.
+        </p>
         <Link to="/login">Login with Google</Link>
       </div>
     );
@@ -154,6 +214,7 @@ const Dashboard = () => {
           <h1 className="page-title">
             <LayoutDashboard size={28} /> Dashboard
           </h1>
+
           <p className="page-subtitle">
             Welcome back, {user.displayName || user.email}! Here's your campus overview.
           </p>
@@ -172,6 +233,7 @@ const Dashboard = () => {
             transition={{ duration: 0.3, delay: index * 0.05 }}
           >
             <div className="dash-stat-icon">{stat.icon}</div>
+
             <div className="dash-stat-info">
               <h3>{stat.value}</h3>
               <p>{stat.label}</p>
@@ -183,10 +245,12 @@ const Dashboard = () => {
       <div className="dashboard-grid">
         <div className="dashboard-section">
           <h2><Activity size={20} /> Recent Activity</h2>
+
           <div className="activity-list">
             {recentActivity.map(a => (
               <div key={a.id} className="activity-item">
                 <div className={`activity-dot ${a.type}`} />
+
                 <div className="activity-content">
                   <p>{a.action}</p>
                   <span>{a.time}</span>
@@ -198,6 +262,7 @@ const Dashboard = () => {
 
         <div className="dashboard-section">
           <h2><Bell size={20} /> Notifications</h2>
+
           <div className="notifications-list">
             {notifications.map(n => (
               <div
@@ -217,6 +282,7 @@ const Dashboard = () => {
 
       <div className="dashboard-section">
         <h2><Plus size={20} /> Quick Actions</h2>
+
         <div className="quick-actions-grid">
           {quickActions.map(action => {
             const destination =
@@ -244,6 +310,7 @@ const Dashboard = () => {
                 >
                   +
                 </div>
+
                 <span>{action.title}</span>
               </Link>
             );

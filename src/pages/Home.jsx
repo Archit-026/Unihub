@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShoppingBag, Search, Calendar, Briefcase, ArrowRight, Star, ChevronDown, Users, RefreshCw, BookOpen, ArrowRightLeft } from 'lucide-react';
+import { ShoppingBag, Calendar, Briefcase, ArrowRight, Star, ChevronDown, Users, RefreshCw, BookOpen, ArrowRightLeft } from 'lucide-react';
 import Hero from '../components/Hero';
 import Features from '../components/Features';
 import StatCard from '../components/StatCard';

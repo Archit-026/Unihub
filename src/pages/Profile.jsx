@@ -29,8 +29,13 @@ const Profile = () => {
     socialLinks: ['', '', '']
   });
 
+  const isCollegeUser = (currentUser) =>
+    currentUser?.emailVerified &&
+    currentUser.email?.toLowerCase().endsWith('@mitsgwl.ac.in');
+
   useEffect(() => {
     let unsubscribeListings = null;
+    let active = true;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (unsubscribeListings) {
@@ -38,30 +43,34 @@ const Profile = () => {
         unsubscribeListings = null;
       }
 
+      if (!active) return;
+
       setUser(currentUser);
+      setNotice('');
+      setListings([]);
 
       if (!currentUser) {
         setProfile({
           name: '', email: '', branch: '', year: '',
           bio: '', skills: '', socialLinks: ['', '', '']
         });
-        setListings([]);
         setLoading(false);
         return;
       }
 
-      if (
-        !currentUser.email?.toLowerCase().endsWith('@mitsgwl.ac.in') ||
-        !currentUser.emailVerified
-      ) {
+      if (!isCollegeUser(currentUser)) {
         setNotice('Please sign in with a verified college email.');
         setLoading(false);
         return;
       }
 
+      setLoading(true);
+
       try {
         const profileRef = doc(db, 'users', currentUser.uid);
         const snapshot = await getDoc(profileRef);
+        if (!active) return;
+
         const saved = snapshot.exists() ? snapshot.data() : {};
 
         setProfile({
@@ -85,9 +94,16 @@ const Profile = () => {
 
         unsubscribeListings = onSnapshot(
           listingsQuery,
-          (result) => setListings(
-            result.docs.map(item => ({ id: item.id, ...item.data() }))
-          ),
+          (result) => {
+            if (active) {
+              setListings(
+                result.docs.map(item => ({
+                  id: item.id,
+                  ...item.data()
+                }))
+              );
+            }
+          },
           (error) => {
             console.error('Listings error:', error);
           }
@@ -96,25 +112,28 @@ const Profile = () => {
         console.error('Profile loading error:', error);
         setNotice('Could not load profile. Please refresh and try again.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     });
 
     return () => {
+      active = false;
       unsubscribeAuth();
       if (unsubscribeListings) unsubscribeListings();
     };
   }, []);
 
   const updateField = (field, value) => {
-    setProfile(previous => ({ ...previous, [field]: value }));
+    setProfile(previous => ({
+      ...previous,
+      [field]: value
+    }));
   };
 
   const saveProfile = async (event) => {
     event.preventDefault();
 
-    if (!user || !user.emailVerified ||
-        !user.email?.toLowerCase().endsWith('@mitsgwl.ac.in')) {
+    if (!user || !isCollegeUser(user)) {
       setNotice('Please sign in with a verified college account.');
       return;
     }
@@ -129,7 +148,10 @@ const Profile = () => {
         branch: profile.branch.trim(),
         year: profile.year.trim(),
         bio: profile.bio.trim(),
-        skills: profile.skills.split(',').map(s => s.trim()).filter(Boolean),
+        skills: profile.skills
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean),
         socialLinks: profile.socialLinks.map(s => s.trim()),
         updatedAt: serverTimestamp()
       }, { merge: true });
@@ -153,6 +175,17 @@ const Profile = () => {
         <h1 className="page-title"><User size={28} /> Profile</h1>
         <p>Please log in to view and edit your profile.</p>
         <a href="/login">Go to Login</a>
+      </div>
+    );
+  }
+
+  if (!isCollegeUser(user)) {
+    return (
+      <div className="page page-profile">
+        <h1 className="page-title"><User size={28} /> Profile</h1>
+        <p role="alert">
+          Please sign in with a verified MITS college email to access your profile.
+        </p>
       </div>
     );
   }
@@ -193,21 +226,28 @@ const Profile = () => {
           </div>
 
           <h2>{profile.name || 'Student Name'}</h2>
+
           <p className="profile-email">
             <Mail size={14} /> {user.email}
           </p>
+
           <p className="profile-branch">
             {[profile.branch, profile.year].filter(Boolean).join(' - ') ||
               'Add your branch and year'}
           </p>
+
           <p className="profile-bio">
             {profile.bio || 'Tell your campus community about yourself.'}
           </p>
 
           <div className="profile-skills">
-            {profile.skills.split(',').map(s => s.trim()).filter(Boolean).map(skill => (
-              <span key={skill} className="skill-tag">{skill}</span>
-            ))}
+            {profile.skills
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean)
+              .map(skill => (
+                <span key={skill} className="skill-tag">{skill}</span>
+              ))}
           </div>
 
           <div className="profile-social">
@@ -331,12 +371,16 @@ const Profile = () => {
             transition={{ delay: 0.3 }}
           >
             <h3><ShoppingBag size={18} /> My Listings</h3>
+
             <div className="listings-list">
               {listings.length === 0 ? (
                 <p>You have no marketplace listings yet.</p>
               ) : listings.map(item => (
                 <div className="listing-item" key={item.id}>
-                  <span>{item.title || 'Untitled listing'}{item.price != null ? ` - ₹${item.price}` : ''}</span>
+                  <span>
+                    {item.title || 'Untitled listing'}
+                    {item.price != null ? ` - ₹${item.price}` : ''}
+                  </span>
                   <span className="listing-status active">Your listing</span>
                 </div>
               ))}

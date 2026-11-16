@@ -1,19 +1,20 @@
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Plus, Pencil, Trash2, X } from 'lucide-react';
+
 import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   query,
-  updateDoc,
-  
+  updateDoc
 } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
 
+import { Link } from 'react-router-dom';
 import EventCard from '../components/EventCard';
 import { auth, db } from '../firebase';
 
@@ -35,9 +36,8 @@ const Events = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  // Load events from Firestore
   useEffect(() => {
-    
-
     const eventsQuery = query(collection(db, 'events'));
 
     const unsubscribe = onSnapshot(
@@ -62,6 +62,7 @@ const Events = () => {
     return unsubscribe;
   }, []);
 
+  // Open create form
   const openCreateForm = () => {
     setForm(emptyForm);
     setEditingId(null);
@@ -70,6 +71,7 @@ const Events = () => {
     setNotice('');
   };
 
+  // Open edit form
   const openEditForm = (event) => {
     setForm({
       title: event.title || '',
@@ -78,12 +80,14 @@ const Events = () => {
       location: event.location || '',
       description: event.description || ''
     });
+
     setEditingId(event.id);
     setShowForm(true);
     setError('');
     setNotice('');
   };
 
+  // Create or update event
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -113,7 +117,6 @@ const Events = () => {
       location: form.location.trim(),
       description: form.description.trim(),
       ownerId: user.uid,
-      ownerEmail: user.email,
       updatedAt: new Date().toISOString()
     };
 
@@ -127,13 +130,18 @@ const Events = () => {
           throw new Error('You can only edit your own events.');
         }
 
-        await updateDoc(doc(db, 'events', editingId), eventData);
+        await updateDoc(doc(db, 'events', editingId), {
+          ...eventData,
+          ownerEmail: deleteField()
+        });
+
         setNotice('Event updated successfully.');
       } else {
         await addDoc(collection(db, 'events'), {
           ...eventData,
           createdAt: new Date().toISOString()
         });
+
         setNotice('Event created successfully.');
       }
 
@@ -148,6 +156,7 @@ const Events = () => {
     }
   };
 
+  // Delete event
   const handleDelete = async (event) => {
     const user = auth.currentUser;
 
@@ -181,6 +190,7 @@ const Events = () => {
           <h1 className="page-title">
             <Calendar size={28} /> Events
           </h1>
+
           <p className="page-subtitle">
             Discover and manage campus events
           </p>
@@ -267,7 +277,11 @@ const Events = () => {
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="submit" disabled={saving} style={buttonStyle}>
-              {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Publish Event'}
+              {saving
+                ? 'Saving...'
+                : editingId
+                  ? 'Save Changes'
+                  : 'Publish Event'}
             </button>
 
             <button

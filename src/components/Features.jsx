@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { ShoppingBag, Search, Calendar, Briefcase, Users, Award } from 'lucide-react';
 import FeatureCard from './FeatureCard';

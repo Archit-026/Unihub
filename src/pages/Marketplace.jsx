@@ -1,19 +1,20 @@
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ShoppingBag, Plus, Pencil, Trash2, X } from 'lucide-react';
+
 import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   query,
-  updateDoc,
-  
+  updateDoc
 } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
 
+import { Link } from 'react-router-dom';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import ProductCard from '../components/ProductCard';
@@ -40,9 +41,8 @@ const Marketplace = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  // Load marketplace listings
   useEffect(() => {
-   
-
     const listingsQuery = query(collection(db, 'marketplace'));
 
     const unsubscribe = onSnapshot(
@@ -67,73 +67,85 @@ const Marketplace = () => {
     return unsubscribe;
   }, []);
 
+  // Filter listings
   const filtered = products.filter((product) => {
     const title = String(product.title || '');
     const matchSearch = title.toLowerCase().includes(search.toLowerCase());
+
     const matchCategory =
       activeCategory === 'All' || product.category === activeCategory;
 
     return matchSearch && matchCategory;
   });
-  
-useEffect(() => {
-  const controller = new AbortController();
 
-  async function fetchRecommendations() {
-    if (!search.trim() && activeCategory === 'All') {
-      setRecommendations([]);
-      return;
-    }
+  // Fetch recommendations
+  useEffect(() => {
+    const controller = new AbortController();
 
-    try {
-      const response = await fetch(
-        'https://unihub-xd9r.onrender.com/api/recommendations',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            products,
-            search,
-            category: activeCategory,
-            limit: 4,
-          }),
-          signal: controller.signal,
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Recommendation API request failed');
-      }
-
-      const data = await response.json();
-      setRecommendations(data.recommendations || []);
-    } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error('Recommendation API error:', error);
+    async function fetchRecommendations() {
+      if (!search.trim() && activeCategory === 'All') {
         setRecommendations([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          'https://unihub-xd9r.onrender.com/api/recommendations',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              products: products.map(
+                ({ title, description, category, price }) => ({
+                  title,
+                  description,
+                  category,
+                  price
+                })
+              ),
+              search,
+              category: activeCategory,
+              limit: 4
+            }),
+            signal: controller.signal
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Recommendation API request failed');
+        }
+
+        const data = await response.json();
+        setRecommendations(data.recommendations || []);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Recommendation API error:', error);
+          setRecommendations([]);
+        }
       }
     }
-  }
 
-  fetchRecommendations();
+    fetchRecommendations();
 
-  return () => controller.abort();
-}, [products, search, activeCategory]);
+    return () => controller.abort();
+  }, [products, search, activeCategory]);
 
-
+  // Open create form
   const openCreateForm = () => {
     setForm({
       ...emptyForm,
       category: categories.find((category) => category !== 'All') || ''
     });
+
     setEditingId(null);
     setShowForm(true);
     setNotice('');
     setError('');
   };
 
+  // Open edit form
   const openEditForm = (product) => {
     setForm({
       title: product.title || '',
@@ -141,12 +153,14 @@ useEffect(() => {
       price: product.price ?? '',
       description: product.description || ''
     });
+
     setEditingId(product.id);
     setShowForm(true);
     setNotice('');
     setError('');
   };
 
+  // Create or update listing
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
@@ -183,7 +197,6 @@ useEffect(() => {
       price,
       description: form.description.trim(),
       ownerId: user.uid,
-      ownerEmail: user.email,
       updatedAt: new Date().toISOString()
     };
 
@@ -197,13 +210,18 @@ useEffect(() => {
           throw new Error('You can only edit your own listings.');
         }
 
-        await updateDoc(doc(db, 'marketplace', editingId), data);
+        await updateDoc(doc(db, 'marketplace', editingId), {
+          ...data,
+          ownerEmail: deleteField()
+        });
+
         setNotice('Listing updated successfully.');
       } else {
         await addDoc(collection(db, 'marketplace'), {
           ...data,
           createdAt: new Date().toISOString()
         });
+
         setNotice('Listing created successfully.');
       }
 
@@ -218,6 +236,7 @@ useEffect(() => {
     }
   };
 
+  // Delete listing
   const handleDelete = async (product) => {
     const user = auth.currentUser;
 
@@ -251,6 +270,7 @@ useEffect(() => {
           <h1 className="page-title">
             <ShoppingBag size={28} /> Marketplace
           </h1>
+
           <p className="page-subtitle">
             Buy and sell items within your campus community
           </p>
@@ -263,37 +283,37 @@ useEffect(() => {
           value={search}
           onChange={setSearch}
         />
+
         <CategoryFilter
           categories={categories}
           active={activeCategory}
           onChange={setActiveCategory}
         />
       </div>
-      
-{recommendations.length > 0 && (
-  <section
-    className="marketplace-recommendations"
-    aria-labelledby="recommendations-title"
-  >
-    <div className="page-header">
-      <div>
-        <h2 id="recommendations-title">Recommended for You</h2>
-        <p className="page-subtitle">
-          Ranked by your selected category and search keywords.
-        </p>
-      </div>
-    </div>
 
-    <div className="products-grid">
-      {recommendations.map((product, index) => (
-        <div key={product.id}>
-          <ProductCard product={product} index={index} />
-        </div>
-      ))}
-    </div>
-  </section>
-)}
+      {recommendations.length > 0 && (
+        <section
+          className="marketplace-recommendations"
+          aria-labelledby="recommendations-title"
+        >
+          <div className="page-header">
+            <div>
+              <h2 id="recommendations-title">Recommended for You</h2>
+              <p className="page-subtitle">
+                Ranked by your selected category and search keywords.
+              </p>
+            </div>
+          </div>
 
+          <div className="products-grid">
+            {recommendations.map((product, index) => (
+              <div key={product.id || `${product.title}-${index}`}>
+                <ProductCard product={product} index={index} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div style={{ margin: '20px 0' }}>
         {auth.currentUser ? (
@@ -344,6 +364,7 @@ useEffect(() => {
               style={inputStyle}
             >
               <option value="">Select category</option>
+
               {categories
                 .filter((category) => category !== 'All')
                 .map((category) => (
@@ -384,8 +405,13 @@ useEffect(() => {
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="submit" disabled={saving} style={buttonStyle}>
-              {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Publish Listing'}
+              {saving
+                ? 'Saving...'
+                : editingId
+                  ? 'Save Changes'
+                  : 'Publish Listing'}
             </button>
+
             <button
               type="button"
               onClick={() => {
@@ -403,7 +429,7 @@ useEffect(() => {
 
       {loading ? (
         <p>Loading marketplace listings...</p>
-     ) : filtered.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="empty-state">
           <p>
             {search || activeCategory !== 'All'
@@ -426,6 +452,7 @@ useEffect(() => {
                   >
                     <Pencil size={15} /> Edit
                   </button>
+
                   <button
                     type="button"
                     onClick={() => handleDelete(product)}

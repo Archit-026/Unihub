@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { Star, RefreshCw, UserPlus, Check, BookOpen, GraduationCap } from 'lucide-react';
+import { Star, RefreshCw, UserPlus, BookOpen, GraduationCap } from 'lucide-react';
 
 const LearnerCard = ({ learner, index }) => {
   const initials = learner.name.split(' ').map((n) => n[0]).join('');

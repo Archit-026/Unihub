@@ -1,11 +1,12 @@
+
 {
   "name": "recommendation-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "UniHub Recommendation API",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

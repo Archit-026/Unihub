@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 
@@ -19,7 +20,10 @@ function tokenize(value = '') {
     .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
 }
 
-function getRecommendations(products, { search = '', category = 'All', limit = 4 } = {}) {
+function getRecommendations(
+  products,
+  { search = '', category = 'All', limit = 4 } = {}
+) {
   const queryWords = tokenize(search);
 
   if (!queryWords.length && category === 'All') {
@@ -29,6 +33,7 @@ function getRecommendations(products, { search = '', category = 'All', limit = 4
   return products
     .map((product) => {
       let score = 0;
+
       const titleWords = tokenize(product.title);
       const descriptionWords = tokenize(product.description);
 
@@ -37,11 +42,18 @@ function getRecommendations(products, { search = '', category = 'All', limit = 4
       }
 
       for (const word of queryWords) {
-        if (titleWords.includes(word)) score += 5;
-        else if (descriptionWords.includes(word)) score += 2;
+        if (titleWords.includes(word)) {
+          score += 5;
+        } else if (descriptionWords.includes(word)) {
+          score += 2;
+        }
       }
 
-      if (String(product.description || '').trim().length >= 30) {
+      // Award the description bonus only to matching products.
+      if (
+        score > 0 &&
+        String(product.description || '').trim().length >= 30
+      ) {
         score += 0.5;
       }
 
@@ -54,11 +66,19 @@ function getRecommendations(products, { search = '', category = 'All', limit = 4
 }
 
 app.get('/', (req, res) => {
-  res.json({ service: 'UniHub Recommendation API', status: 'running' });
+  res.json({
+    service: 'UniHub Recommendation API',
+    status: 'running'
+  });
 });
 
 app.post('/api/recommendations', (req, res) => {
-  const { products, search = '', category = 'All', limit = 4 } = req.body || {};
+  const {
+    products,
+    search = '',
+    category = 'All',
+    limit = 4
+  } = req.body || {};
 
   if (!Array.isArray(products)) {
     return res.status(400).json({
@@ -75,6 +95,16 @@ app.post('/api/recommendations', (req, res) => {
   res.json({ recommendations });
 });
 
-app.listen(PORT, () => {
-  console.log(`Recommendation API running on http://localhost:${PORT}`);
-});
+// Start server only when this file is executed directly.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Recommendation API running on http://localhost:${PORT}`);
+  });
+}
+
+// Export functions for testing.
+module.exports = {
+  app,
+  tokenize,
+  getRecommendations
+};

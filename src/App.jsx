@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BrowserRouter as Router,
   Routes,
@@ -87,15 +87,10 @@ function ProtectedApp() {
           <Route path="/lost-found" element={<LostFound />} />
           <Route path="/events" element={<Events />} />
           <Route path="/help" element={<Help />} />
-
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/learners" element={<SkillSwap />} />
-
-          <Route
-            path="*"
-            element={<Navigate to="/" replace />}
-          />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>
