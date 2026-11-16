@@ -5,8 +5,27 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
-app.use(express.json());
+// Allow only trusted browser origins.
+const allowedOrigins = new Set([
+  'https://unihubmits.netlify.app',
+  'http://localhost:5173',
+  ...(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+]);
+
+app.use(cors({
+  origin(origin, callback) {
+    // Allow requests without an Origin header (e.g. server-to-server).
+    if (!origin || allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Origin not allowed'));
+  }
+}));
+
+app.use(express.json({ limit: '100kb' }));
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'from', 'this', 'that',
@@ -49,7 +68,6 @@ function getRecommendations(
         }
       }
 
-      // Award the description bonus only to matching products.
       if (
         score > 0 &&
         String(product.description || '').trim().length >= 30
@@ -86,23 +104,74 @@ app.post('/api/recommendations', (req, res) => {
     });
   }
 
+  if (products.length > 200) {
+    return res.status(400).json({
+      error: 'Maximum 200 products allowed'
+    });
+  }
+
+  if (
+    typeof search !== 'string' ||
+    search.length > 200 ||
+    typeof category !== 'string' ||
+    category.length > 100
+  ) {
+    return res.status(400).json({
+      error: 'Invalid search or category'
+    });
+  }
+
+  const validProducts = products.every((product) =>
+    product &&
+    typeof product === 'object' &&
+    !Array.isArray(product) &&
+    (product.title === undefined || typeof product.title === 'string') &&
+    (product.description === undefined || typeof product.description === 'string') &&
+    (product.category === undefined || typeof product.category === 'string') &&
+    (product.title || '').length <= 200 &&
+    (product.description || '').length <= 2000 &&
+    (product.category || '').length <= 100
+  );
+
+  if (!validProducts) {
+    return res.status(400).json({
+      error: 'Invalid product data'
+    });
+  }
+
   const recommendations = getRecommendations(products, {
     search,
     category,
     limit
   });
 
-  res.json({ recommendations });
+  return res.json({ recommendations });
 });
 
-// Start server only when this file is executed directly.
+// Handle malformed JSON and oversized requests.
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request too large' });
+  }
+
+  if (err instanceof SyntaxError && err.status === 400) {
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
+
+  if (err.message === 'Origin not allowed') {
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
+
+  console.error('API error:', err.message);
+  return res.status(500).json({ error: 'Internal server error' });
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`Recommendation API running on http://localhost:${PORT}`);
+    console.log(`Recommendation API running on port ${PORT}`);
   });
 }
 
-// Export functions for testing.
 module.exports = {
   app,
   tokenize,

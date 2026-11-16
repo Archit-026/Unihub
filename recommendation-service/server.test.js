@@ -160,4 +160,84 @@ describe('Recommendation API', () => {
     assert.equal(response.status, 400);
     assert.equal(data.error, 'products must be an array');
   });
+
+  it('rejects requests from unapproved browser origins', async () => {
+    const response = await fetch(`${baseUrl}/api/recommendations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://malicious-example.com'
+      },
+      body: JSON.stringify({ products, search: 'Python' })
+    });
+
+    assert.equal(response.status, 403);
+  });
+
+  it('rejects more than 200 products', async () => {
+    const response = await fetch(`${baseUrl}/api/recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        products: Array.from({ length: 201 }, () => ({
+          title: 'Python',
+          description: 'Programming book',
+          category: 'Books'
+        }))
+      })
+    });
+
+    const data = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(data.error, 'Maximum 200 products allowed');
+  });
+
+  it('rejects invalid product fields', async () => {
+    const response = await fetch(`${baseUrl}/api/recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        products: [{ title: 123 }]
+      })
+    });
+
+    const data = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(data.error, 'Invalid product data');
+  });
+
+  it('rejects invalid search and category values', async () => {
+    const response = await fetch(`${baseUrl}/api/recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        products,
+        search: 123
+      })
+    });
+
+    const data = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(data.error, 'Invalid search or category');
+  });
+
+  it('rejects oversized JSON requests', async () => {
+    const response = await fetch(`${baseUrl}/api/recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        products: [],
+        search: 'x'.repeat(110000)
+      })
+    });
+
+    const data = await response.json();
+
+    assert.equal(response.status, 413);
+    assert.equal(data.error, 'Request too large');
+  });
+
 });
