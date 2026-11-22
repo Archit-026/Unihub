@@ -35,6 +35,10 @@ vi.mock('../firebase', () => ({
   db: {},
 }));
 
+vi.mock('../firestore', () => ({
+  db: {},
+}));
+
 describe('Profile Page', () => {
   const collegeUser = {
     uid: 'student123',

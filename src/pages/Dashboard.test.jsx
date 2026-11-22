@@ -1,13 +1,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
 
 const mocks = vi.hoisted(() => ({
   onAuthStateChanged: vi.fn(),
   collection: vi.fn(),
-  onSnapshot: vi.fn(),
+  getCountFromServer: vi.fn(),
   query: vi.fn(),
   where: vi.fn(),
 }));
@@ -18,13 +18,17 @@ vi.mock('firebase/auth', () => ({
 
 vi.mock('firebase/firestore', () => ({
   collection: mocks.collection,
-  onSnapshot: mocks.onSnapshot,
+  getCountFromServer: mocks.getCountFromServer,
   query: mocks.query,
   where: mocks.where,
 }));
 
 vi.mock('../firebase', () => ({
   auth: {},
+  db: {},
+}));
+
+vi.mock('../firestore', () => ({
   db: {},
 }));
 
@@ -57,23 +61,14 @@ describe('Dashboard Page', () => {
     vi.clearAllMocks();
 
     mocks.collection.mockImplementation((db, name) => ({ name }));
-    mocks.query.mockImplementation((collectionRef) => collectionRef);
+    mocks.query.mockImplementation(collectionRef => collectionRef);
     mocks.where.mockReturnValue({});
 
-    mocks.onSnapshot.mockImplementation((ref, callback) => {
-      callback({
-        docs: ref.name === 'marketplace'
-          ? [
-              { id: 'p1', data: () => ({ title: 'Book' }) },
-              { id: 'p2', data: () => ({ title: 'Laptop' }) },
-            ]
-          : [
-              { id: 'e1', data: () => ({ title: 'Tech Fest' }) },
-            ],
-      });
-
-      return vi.fn();
-    });
+    mocks.getCountFromServer.mockImplementation(async ref => ({
+      data: () => ({
+        count: ref.name === 'marketplace' ? 2 : 1,
+      }),
+    }));
 
     mocks.onAuthStateChanged.mockImplementation((auth, callback) => {
       callback(collegeUser);
@@ -137,6 +132,7 @@ describe('Dashboard Page', () => {
     renderDashboard();
 
     expect(await screen.findByText('Dashboard')).toBeInTheDocument();
+
     expect(
       screen.getByText(/Welcome back, Priya Sharma! Here's your campus overview./)
     ).toBeInTheDocument();
@@ -148,7 +144,7 @@ describe('Dashboard Page', () => {
     expect(screen.getByText('Connections')).toBeInTheDocument();
   });
 
-  it('displays marketplace and event counts from Firestore', async () => {
+  it('displays accurate marketplace and event counts using aggregation', async () => {
     renderDashboard();
 
     await screen.findByText('My Listings');
@@ -156,10 +152,32 @@ describe('Dashboard Page', () => {
     const listingCard = screen.getByText('My Listings').closest('.dash-stat-info');
     const eventCard = screen.getByText('My Events').closest('.dash-stat-info');
 
-    expect(listingCard.querySelector('h3')).toHaveTextContent('2');
-    expect(eventCard.querySelector('h3')).toHaveTextContent('1');
+    await waitFor(() => {
+      expect(listingCard.querySelector('h3')).toHaveTextContent('2');
+      expect(eventCard.querySelector('h3')).toHaveTextContent('1');
+    });
 
     expect(mocks.where).toHaveBeenCalledWith('ownerId', '==', 'student123');
+    expect(mocks.getCountFromServer).toHaveBeenCalledTimes(2);
+    expect(mocks.onAuthStateChanged).toHaveBeenCalled();
+  });
+
+  it('does not use document snapshot listeners for dashboard counts', async () => {
+    renderDashboard();
+
+    await screen.findByText('My Listings');
+
+    await waitFor(() => {
+      expect(mocks.getCountFromServer).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mocks.getCountFromServer).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'marketplace' })
+    );
+
+    expect(mocks.getCountFromServer).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'events' })
+    );
   });
 
   it('renders recent activity and notifications', async () => {
@@ -191,25 +209,43 @@ describe('Dashboard Page', () => {
       .toHaveAttribute('href', '/learners');
   });
 
-  it('shows an error when marketplace data cannot be loaded', async () => {
+  it('shows an error when marketplace count cannot be loaded', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    mocks.onSnapshot.mockImplementation((ref, callback, errorCallback) => {
+    mocks.getCountFromServer.mockImplementation(async ref => {
       if (ref.name === 'marketplace') {
-        errorCallback(new Error('Permission denied'));
-      } else {
-        callback({ docs: [] });
+        throw new Error('Permission denied');
       }
 
-      return vi.fn();
+      return {
+        data: () => ({ count: 1 }),
+      };
     });
 
     renderDashboard();
 
-    expect(
-      await screen.findByRole('alert')
-    ).toHaveTextContent(
+    expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not load marketplace statistics. Check Firestore permissions.'
+    );
+  });
+
+  it('shows an error when event count cannot be loaded', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    mocks.getCountFromServer.mockImplementation(async ref => {
+      if (ref.name === 'events') {
+        throw new Error('Permission denied');
+      }
+
+      return {
+        data: () => ({ count: 2 }),
+      };
+    });
+
+    renderDashboard();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load event statistics. Check Firestore permissions.'
     );
   });
 });

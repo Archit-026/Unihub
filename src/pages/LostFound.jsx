@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -15,7 +14,8 @@ import {
 } from 'firebase/firestore';
 
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
+import { db } from '../firestore';
 
 const COLLECTION_NAME = 'lostFoundReports';
 
@@ -60,6 +60,7 @@ function formatDate(value) {
 
 export default function LostFound() {
   const [user, setUser] = useState(auth.currentUser);
+  const [authReady, setAuthReady] = useState(false);
   const [reports, setReports] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -76,12 +77,41 @@ export default function LostFound() {
 
   // Listen for authentication changes
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, setUser);
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthReady(true);
+    });
+
     return unsubscribeAuth;
   }, []);
 
-  // Load Lost & Found reports
+  // Load Lost & Found reports only after authentication is resolved.
+  // Firestore rules require a verified MITS college account to read reports.
   useEffect(() => {
+    if (!authReady) return;
+
+    const email = user?.email?.toLowerCase() || '';
+
+    if (
+      !user ||
+      !user.emailVerified ||
+      !email.endsWith('@mitsgwl.ac.in')
+    ) {
+      setReports([]);
+      setLoading(false);
+
+      setError(
+        !user
+          ? 'Please sign in with your verified MITS college account to view reports.'
+          : 'Please verify your MITS college email to view reports.'
+      );
+
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
     const reportsQuery = query(
       collection(db, COLLECTION_NAME),
       orderBy('createdAt', 'desc')
@@ -103,16 +133,22 @@ export default function LostFound() {
       (err) => {
         console.error('Lost & Found listener error:', err);
 
-        setError(
-          'Could not load reports. Check your Firestore rules and internet connection.'
-        );
+        if (err.code === 'permission-denied') {
+          setError(
+            'Your account does not have permission to view these reports. Please sign in with your verified MITS account.'
+          );
+        } else {
+          setError(
+            'Unable to connect to Lost & Found. Please check your internet connection and try again.'
+          );
+        }
 
         setLoading(false);
       }
     );
 
     return unsubscribe;
-  }, []);
+  }, [user, authReady]);
 
   // Search, tab and distance filtering
   const filteredReports = useMemo(() => {

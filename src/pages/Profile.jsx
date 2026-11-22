@@ -10,7 +10,8 @@ import {
   collection, onSnapshot, query, where
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
+import { db } from '../firestore';
 
 const Profile = () => {
   const [user, setUser] = useState(null);

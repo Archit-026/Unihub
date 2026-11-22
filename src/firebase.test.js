@@ -4,11 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   initializeApp: vi.fn(),
   getAuth: vi.fn(),
-  getFirestore: vi.fn(),
   GoogleAuthProvider: vi.fn(),
   app: { name: 'mock-firebase-app' },
   auth: { name: 'mock-auth' },
-  db: { name: 'mock-firestore' },
 }));
 
 vi.mock('firebase/app', () => ({
@@ -20,10 +18,6 @@ vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: mocks.GoogleAuthProvider,
 }));
 
-vi.mock('firebase/firestore', () => ({
-  getFirestore: mocks.getFirestore,
-}));
-
 describe('Firebase initialization', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -31,7 +25,6 @@ describe('Firebase initialization', () => {
 
     mocks.initializeApp.mockReturnValue(mocks.app);
     mocks.getAuth.mockReturnValue(mocks.auth);
-    mocks.getFirestore.mockReturnValue(mocks.db);
   });
 
   it('initializes the Firebase application', async () => {
@@ -52,12 +45,6 @@ describe('Firebase initialization', () => {
     expect(mocks.getAuth).toHaveBeenCalledWith(mocks.app);
   });
 
-  it('initializes Cloud Firestore', async () => {
-    await import('./firebase');
-
-    expect(mocks.getFirestore).toHaveBeenCalledWith(mocks.app);
-  });
-
   it('creates a Google Authentication provider', async () => {
     await import('./firebase');
 
@@ -67,8 +54,10 @@ describe('Firebase initialization', () => {
   it('exports the initialized Firebase services', async () => {
     const firebase = await import('./firebase');
 
+    expect(firebase.app).toBe(mocks.app);
     expect(firebase.auth).toBe(mocks.auth);
-    expect(firebase.db).toBe(mocks.db);
-    expect(firebase.googleProvider).toBeInstanceOf(mocks.GoogleAuthProvider);
+    expect(firebase.googleProvider).toBeInstanceOf(
+      mocks.GoogleAuthProvider
+    );
   });
 });

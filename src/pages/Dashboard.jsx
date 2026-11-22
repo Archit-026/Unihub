@@ -8,17 +8,18 @@ import {
 import { Link } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
-  collection, onSnapshot, query, where
+  collection, getCountFromServer, query, where
 } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
+import { db } from '../firestore';
 import {
   recentActivity, notifications, quickActions
 } from '../data/mockData';
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
-  const [listings, setListings] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [listingCount, setListingCount] = useState(0);
+  const [eventCount, setEventCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState('');
 
@@ -27,26 +28,14 @@ const Dashboard = () => {
     currentUser.email?.toLowerCase().endsWith('@mitsgwl.ac.in');
 
   useEffect(() => {
-    let unsubscribeListings = null;
-    let unsubscribeEvents = null;
     let active = true;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, currentUser => {
-      if (unsubscribeListings) {
-        unsubscribeListings();
-        unsubscribeListings = null;
-      }
-
-      if (unsubscribeEvents) {
-        unsubscribeEvents();
-        unsubscribeEvents = null;
-      }
-
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!active) return;
 
       setUser(currentUser);
-      setListings([]);
-      setEvents([]);
+      setListingCount(0);
+      setEventCount(0);
       setDataError('');
 
       if (!isCollegeUser(currentUser)) {
@@ -66,92 +55,51 @@ const Dashboard = () => {
         where('ownerId', '==', currentUser.uid)
       );
 
-      let listingsLoaded = false;
-      let eventsLoaded = false;
+      const [listingsResult, eventsResult] = await Promise.allSettled([
+        getCountFromServer(listingsQuery),
+        getCountFromServer(eventsQuery)
+      ]);
 
-      const finishLoading = () => {
-        if (listingsLoaded && eventsLoaded && active) {
-          setLoading(false);
-        }
-      };
+      if (!active) return;
 
-      unsubscribeListings = onSnapshot(
-        listingsQuery,
-        snapshot => {
-          if (!active) return;
+      if (listingsResult.status === 'fulfilled') {
+        setListingCount(listingsResult.value.data().count);
+      } else {
+        console.error('Marketplace dashboard error:', listingsResult.reason);
+        setDataError(
+          'Could not load marketplace statistics. Check Firestore permissions.'
+        );
+      }
 
-          setListings(
-            snapshot.docs.map(d => ({
-              id: d.id,
-              ...d.data()
-            }))
-          );
+      if (eventsResult.status === 'fulfilled') {
+        setEventCount(eventsResult.value.data().count);
+      } else {
+        console.error('Events dashboard error:', eventsResult.reason);
+        setDataError((previous) =>
+          previous
+            ? `${previous} Could not load event statistics.`
+            : 'Could not load event statistics. Check Firestore permissions.'
+        );
+      }
 
-          listingsLoaded = true;
-          finishLoading();
-        },
-        error => {
-          console.error('Marketplace dashboard error:', error);
-
-          if (!active) return;
-
-          setDataError(
-            'Could not load marketplace statistics. Check Firestore permissions.'
-          );
-
-          listingsLoaded = true;
-          finishLoading();
-        }
-      );
-
-      unsubscribeEvents = onSnapshot(
-        eventsQuery,
-        snapshot => {
-          if (!active) return;
-
-          setEvents(
-            snapshot.docs.map(d => ({
-              id: d.id,
-              ...d.data()
-            }))
-          );
-
-          eventsLoaded = true;
-          finishLoading();
-        },
-        error => {
-          console.error('Events dashboard error:', error);
-
-          if (!active) return;
-
-          setDataError(
-            'Could not load event statistics. Check Firestore permissions.'
-          );
-
-          eventsLoaded = true;
-          finishLoading();
-        }
-      );
+      setLoading(false);
     });
 
     return () => {
       active = false;
       unsubscribeAuth();
-
-      if (unsubscribeListings) unsubscribeListings();
-      if (unsubscribeEvents) unsubscribeEvents();
     };
   }, []);
 
   const stats = [
     {
       label: 'My Listings',
-      value: listings.length,
+      value: listingCount,
       icon: <ShoppingBag size={24} />
     },
     {
       label: 'My Events',
-      value: events.length,
+      value: eventCount,
       icon: <Calendar size={24} />
     },
     {

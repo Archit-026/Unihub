@@ -1,0 +1,94 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Check whether the user is a verified MITS student
+    function isCollegeUser() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.matches('.*@mitsgwl\\.ac\\.in$');
+    }
+
+    // Validate Lost & Found coordinates
+    function validCoordinates(data) {
+      return (
+        data.get('latitude', null) == null
+        && data.get('longitude', null) == null
+      ) || (
+        data.get('latitude', null) is number
+        && data.get('longitude', null) is number
+        && data.latitude >= -90
+        && data.latitude <= 90
+        && data.longitude >= -180
+        && data.longitude <= 180
+      );
+    }
+
+    // Validate Lost & Found report fields
+    function validLostFoundReport(data) {
+      return data.status in ['lost', 'found']
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 100
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 2000
+        && data.location is string
+        && data.location.size() > 0
+        && data.location.size() <= 200
+        && data.ownerId is string
+        && validCoordinates(data);
+    }
+
+    // MARKETPLACE
+    match /marketplace/{itemId} {
+      allow read: if true;
+      allow create: if isCollegeUser()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isCollegeUser()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isCollegeUser()
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    // EVENTS
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isCollegeUser()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isCollegeUser()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isCollegeUser()
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    // USER PROFILES
+    match /users/{userId} {
+      allow read: if isCollegeUser();
+      allow create, update: if isCollegeUser()
+        && request.auth.uid == userId;
+    }
+
+    // LOST AND FOUND
+    match /lostFoundReports/{reportId} {
+      allow read: if isCollegeUser();
+      allow create: if isCollegeUser()
+        && request.resource.data.ownerId == request.auth.uid
+        && validLostFoundReport(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isCollegeUser()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validLostFoundReport(request.resource.data)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isCollegeUser()
+        && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}

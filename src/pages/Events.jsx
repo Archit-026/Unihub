@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Plus, Pencil, Trash2, X } from 'lucide-react';
@@ -9,14 +8,21 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
+  startAfter,
   updateDoc
 } from 'firebase/firestore';
 
 import { Link } from 'react-router-dom';
 import EventCard from '../components/EventCard';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
+import { db } from '../firestore';
+
+const PAGE_SIZE = 12;
 
 const emptyForm = {
   title: '',
@@ -32,35 +38,109 @@ const Events = () => {
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [lastVisible, setLastVisible] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  // Load events from Firestore
+  // Keep the first page live; fetch later pages only when requested.
   useEffect(() => {
-    const eventsQuery = query(collection(db, 'events'));
+    const firstPageQuery = query(
+      collection(db, 'events'),
+      orderBy('date', 'asc'),
+      limit(PAGE_SIZE)
+    );
 
     const unsubscribe = onSnapshot(
-      eventsQuery,
+      firstPageQuery,
       (snapshot) => {
-        setEvents(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data()
-          }))
-        );
+        const firstPage = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data()
+        }));
+
+        setEvents((currentEvents) => {
+          const firstPageIds = new Set(firstPage.map((event) => event.id));
+
+          const previouslyLoaded = currentEvents.filter(
+            (event) => !firstPageIds.has(event.id)
+          );
+
+          const merged = [...firstPage, ...previouslyLoaded];
+          const seen = new Set();
+
+          return merged.filter((event) => {
+            if (seen.has(event.id)) return false;
+
+            seen.add(event.id);
+            return true;
+          });
+        });
+
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1] || null);
+        setHasMore(snapshot.docs.length === PAGE_SIZE);
         setLoading(false);
         setError('');
       },
       (err) => {
         console.error('Events load error:', err);
-        setError('Could not load events. Check your Firestore rules and connection.');
+        setError(
+          'Could not load events. Check your Firestore rules and connection.'
+        );
         setLoading(false);
       }
     );
 
     return unsubscribe;
   }, []);
+
+  // Fetch the next page only when the user clicks Load More.
+  const loadMoreEvents = async () => {
+    if (!lastVisible || !hasMore || loadingMore) return;
+
+    setLoadingMore(true);
+    setError('');
+
+    try {
+      const nextPageQuery = query(
+        collection(db, 'events'),
+        orderBy('date', 'asc'),
+        startAfter(lastVisible),
+        limit(PAGE_SIZE)
+      );
+
+      const snapshot = await getDocs(nextPageQuery);
+
+      const nextPage = snapshot.docs.map((item) => ({
+        id: item.id,
+        ...item.data()
+      }));
+
+      setEvents((currentEvents) => {
+        const existingIds = new Set(
+          currentEvents.map((event) => event.id)
+        );
+
+        return [
+          ...currentEvents,
+          ...nextPage.filter((event) => !existingIds.has(event.id))
+        ];
+      });
+
+      setLastVisible(
+        snapshot.docs[snapshot.docs.length - 1] || lastVisible
+      );
+
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
+    } catch (err) {
+      console.error('More events load error:', err);
+      setError('Could not load more events. Please try again.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   // Open create form
   const openCreateForm = () => {
@@ -124,7 +204,9 @@ const Events = () => {
 
     try {
       if (editingId) {
-        const existing = events.find((item) => item.id === editingId);
+        const existing = events.find(
+          (item) => item.id === editingId
+        );
 
         if (!existing || existing.ownerId !== user.uid) {
           throw new Error('You can only edit your own events.');
@@ -199,7 +281,11 @@ const Events = () => {
 
       <div style={{ margin: '20px 0' }}>
         {auth.currentUser ? (
-          <button type="button" onClick={openCreateForm} style={buttonStyle}>
+          <button
+            type="button"
+            onClick={openCreateForm}
+            style={buttonStyle}
+          >
             <Plus size={18} /> Create Event
           </button>
         ) : (
@@ -210,8 +296,17 @@ const Events = () => {
         )}
       </div>
 
-      {error && <p role="alert" style={errorStyle}>{error}</p>}
-      {notice && <p role="status" style={successStyle}>{notice}</p>}
+      {error && (
+        <p role="alert" style={errorStyle}>
+          {error}
+        </p>
+      )}
+
+      {notice && (
+        <p role="status" style={successStyle}>
+          {notice}
+        </p>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} style={formStyle}>
@@ -223,7 +318,9 @@ const Events = () => {
               required
               maxLength={120}
               value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, title: e.target.value })
+              }
               placeholder="e.g. Coding Workshop"
               style={inputStyle}
             />
@@ -235,7 +332,9 @@ const Events = () => {
               required
               type="date"
               value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, date: e.target.value })
+              }
               style={inputStyle}
             />
           </label>
@@ -245,7 +344,9 @@ const Events = () => {
             <input
               type="time"
               value={form.time}
-              onChange={(e) => setForm({ ...form, time: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, time: e.target.value })
+              }
               style={inputStyle}
             />
           </label>
@@ -256,7 +357,9 @@ const Events = () => {
               required
               maxLength={200}
               value={form.location}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, location: e.target.value })
+              }
               placeholder="e.g. College auditorium"
               style={inputStyle}
             />
@@ -276,7 +379,11 @@ const Events = () => {
           </label>
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button type="submit" disabled={saving} style={buttonStyle}>
+            <button
+              type="submit"
+              disabled={saving}
+              style={buttonStyle}
+            >
               {saving
                 ? 'Saving...'
                 : editingId
@@ -306,33 +413,60 @@ const Events = () => {
           <p>No events yet. Create your first campus event!</p>
         </div>
       ) : (
-        <div className="events-grid">
-          {events.map((event, index) => (
-            <div key={event.id}>
-              <EventCard event={event} index={index} />
+        <>
+          <div className="events-grid">
+            {events.map((event, index) => (
+              <div key={event.id}>
+                <EventCard event={event} index={index} />
 
-              {event.ownerId === auth.currentUser?.uid && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => openEditForm(event)}
-                    style={secondaryButtonStyle}
+                {event.ownerId === auth.currentUser?.uid && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      marginTop: 8
+                    }}
                   >
-                    <Pencil size={15} /> Edit
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(event)}
+                      style={secondaryButtonStyle}
+                    >
+                      <Pencil size={15} /> Edit
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(event)}
-                    style={deleteButtonStyle}
-                  >
-                    <Trash2 size={15} /> Delete
-                  </button>
-                </div>
-              )}
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(event)}
+                      style={deleteButtonStyle}
+                    >
+                      <Trash2 size={15} /> Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {hasMore && (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                margin: '24px 0'
+              }}
+            >
+              <button
+                type="button"
+                onClick={loadMoreEvents}
+                disabled={loadingMore}
+                style={buttonStyle}
+              >
+                {loadingMore ? 'Loading...' : 'Load More Events'}
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

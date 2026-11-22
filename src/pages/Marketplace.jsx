@@ -9,9 +9,14 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  documentId,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
-  updateDoc
+  startAfter,
+  updateDoc,
 } from 'firebase/firestore';
 
 import { Link } from 'react-router-dom';
@@ -19,8 +24,9 @@ import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import ProductCard from '../components/ProductCard';
 import { categories } from '../data/mockData';
-import { auth, db } from '../firebase';
-
+import { auth } from '../firebase';
+import { db } from '../firestore';
+const PAGE_SIZE = 12;
 const emptyForm = {
   title: '',
   category: '',
@@ -32,6 +38,9 @@ const Marketplace = () => {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [products, setProducts] = useState([]);
+  const [lastVisible, setLastVisible] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [recommendations, setRecommendations] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
@@ -40,32 +49,143 @@ const Marketplace = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
   // Load marketplace listings
   useEffect(() => {
-    const listingsQuery = query(collection(db, 'marketplace'));
+    let active = true;
+    let unsubscribe = () => {};
 
-    const unsubscribe = onSnapshot(
-      listingsQuery,
-      (snapshot) => {
-        setProducts(
-          snapshot.docs.map((item) => ({
+    const hasFilters = search.trim() || activeCategory !== 'All';
+
+    if (hasFilters) {
+      setLoading(true);
+      setHasMore(false);
+      setLastVisible(null);
+
+      const timeoutId = setTimeout(async () => {
+        try {
+          const snapshot = await getDocs(
+            collection(db, 'marketplace')
+          );
+
+          if (!active) return;
+
+          const items = snapshot.docs.map((item) => ({
             id: item.id,
             ...item.data()
-          }))
-        );
+          }));
+
+          setProducts(items);
+          setLoading(false);
+          setError('');
+        } catch (err) {
+          if (!active) return;
+
+          console.error('Marketplace load error:', err);
+          setError('Could not load listings. Check your Firestore rules and connection.');
+          setLoading(false);
+        }
+      }, 300);
+
+      return () => {
+        active = false;
+        clearTimeout(timeoutId);
+      };
+    }
+
+    setLoading(true);
+
+    let firstSnapshot = true;
+
+    const listingsQuery = query(
+      collection(db, 'marketplace'),
+      orderBy(documentId()),
+      limit(PAGE_SIZE)
+    );
+
+    unsubscribe = onSnapshot(
+      listingsQuery,
+      (snapshot) => {
+        if (!active) return;
+
+        const items = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data()
+        }));
+
+        if (firstSnapshot) {
+          setProducts(items);
+          firstSnapshot = false;
+        } else {
+          setProducts((previous) => {
+            const firstPageIds = new Set(items.map((item) => item.id));
+
+            return [
+              ...items,
+              ...previous.filter((item) => !firstPageIds.has(item.id))
+            ];
+          });
+        }
+
+        setLastVisible(snapshot.docs.at(-1) || null);
+        setHasMore(snapshot.docs.length === PAGE_SIZE);
         setLoading(false);
         setError('');
       },
       (err) => {
+        if (!active) return;
+
         console.error('Marketplace load error:', err);
         setError('Could not load listings. Check your Firestore rules and connection.');
         setLoading(false);
       }
     );
 
-    return unsubscribe;
-  }, []);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [search, activeCategory]);
+
+  // Load the next page of marketplace listings
+  const loadMoreListings = async () => {
+    if (!lastVisible || !hasMore || loadingMore) return;
+
+    setLoadingMore(true);
+    setError('');
+
+    try {
+      const nextQuery = query(
+        collection(db, 'marketplace'),
+        orderBy(documentId()),
+        startAfter(lastVisible),
+        limit(PAGE_SIZE)
+      );
+
+      const snapshot = await getDocs(nextQuery);
+
+      const nextProducts = snapshot.docs.map((item) => ({
+        id: item.id,
+        ...item.data()
+      }));
+
+      setProducts((previous) => {
+        const existingIds = new Set(previous.map((item) => item.id));
+
+        return [
+          ...previous,
+          ...nextProducts.filter((item) => !existingIds.has(item.id))
+        ];
+      });
+
+      setLastVisible(snapshot.docs.at(-1) || lastVisible);
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
+    } catch (err) {
+      console.error('Marketplace pagination error:', err);
+      setError('Could not load more listings. Please try again.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   // Filter listings
   const filtered = products.filter((product) => {
@@ -464,6 +584,18 @@ const Marketplace = () => {
               )}
             </div>
           ))}
+        </div>
+      )}
+            {!loading && hasMore && (
+        <div style={{ textAlign: 'center', margin: '24px 0' }}>
+          <button
+            type="button"
+            onClick={loadMoreListings}
+            disabled={loadingMore}
+            style={buttonStyle}
+          >
+            {loadingMore ? 'Loading...' : 'Load More Listings'}
+          </button>
         </div>
       )}
     </div>

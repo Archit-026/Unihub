@@ -1,4 +1,3 @@
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -10,16 +9,20 @@ const mocks = vi.hoisted(() => ({
   deleteDoc: vi.fn(),
   deleteField: vi.fn(),
   doc: vi.fn(),
+  getDocs: vi.fn(),
+  limit: vi.fn(),
   onSnapshot: vi.fn(),
+  orderBy: vi.fn(),
   query: vi.fn(),
+  startAfter: vi.fn(),
   updateDoc: vi.fn(),
   auth: {
     currentUser: {
       uid: 'student123',
       email: 'student@mitsgwl.ac.in',
-      emailVerified: true,
-    },
-  },
+      emailVerified: true
+    }
+  }
 }));
 
 vi.mock('firebase/firestore', () => ({
@@ -28,20 +31,27 @@ vi.mock('firebase/firestore', () => ({
   deleteDoc: mocks.deleteDoc,
   deleteField: mocks.deleteField,
   doc: mocks.doc,
+  getDocs: mocks.getDocs,
+  limit: mocks.limit,
   onSnapshot: mocks.onSnapshot,
+  orderBy: mocks.orderBy,
   query: mocks.query,
-  updateDoc: mocks.updateDoc,
+  startAfter: mocks.startAfter,
+  updateDoc: mocks.updateDoc
 }));
 
 vi.mock('../firebase', () => ({
-  auth: mocks.auth,
-  db: {},
+  auth: mocks.auth
+}));
+
+vi.mock('../firestore', () => ({
+  db: {}
 }));
 
 vi.mock('../components/EventCard', () => ({
   default: ({ event }) => (
     <div data-testid="event-card">{event.title}</div>
-  ),
+  )
 }));
 
 describe('Events Page', () => {
@@ -51,8 +61,15 @@ describe('Events Page', () => {
     time: '10:00',
     location: 'College Auditorium',
     description: 'Learn programming.',
-    ownerId: 'student123',
+    ownerId: 'student123'
   };
+
+  const makeDocument = (id, data = sampleEvent) => ({
+    id,
+    data: () => ({ ...data })
+  });
+
+  const firstPageDocs = [makeDocument('event1')];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -60,27 +77,23 @@ describe('Events Page', () => {
     mocks.auth.currentUser = {
       uid: 'student123',
       email: 'student@mitsgwl.ac.in',
-      emailVerified: true,
+      emailVerified: true
     };
 
-    mocks.collection.mockReturnValue({});
-    mocks.query.mockReturnValue({});
-    mocks.doc.mockReturnValue({});
+    mocks.collection.mockReturnValue('events-collection');
+    mocks.query.mockReturnValue('events-query');
+    mocks.orderBy.mockReturnValue('date-order');
+    mocks.limit.mockReturnValue('page-limit');
+    mocks.startAfter.mockReturnValue('cursor');
+    mocks.doc.mockReturnValue('event-document');
     mocks.deleteField.mockReturnValue('DELETE_FIELD');
     mocks.addDoc.mockResolvedValue({ id: 'new-event' });
     mocks.updateDoc.mockResolvedValue();
     mocks.deleteDoc.mockResolvedValue();
+    mocks.getDocs.mockResolvedValue({ docs: [] });
 
     mocks.onSnapshot.mockImplementation((query, success) => {
-      success({
-        docs: [
-          {
-            id: 'event1',
-            data: () => ({ ...sampleEvent }),
-          },
-        ],
-      });
-
+      success({ docs: firstPageDocs });
       return vi.fn();
     });
 
@@ -106,7 +119,7 @@ describe('Events Page', () => {
     ).toBeInTheDocument();
   });
 
-  it('loads and displays events from Firestore', () => {
+  it('loads the first page of events in date order with a page limit', () => {
     renderEvents();
 
     expect(screen.getByTestId('event-card')).toHaveTextContent(
@@ -114,6 +127,14 @@ describe('Events Page', () => {
     );
 
     expect(mocks.collection).toHaveBeenCalledWith({}, 'events');
+    expect(mocks.orderBy).toHaveBeenCalledWith('date', 'asc');
+    expect(mocks.limit).toHaveBeenCalledWith(12);
+
+    expect(mocks.onSnapshot).toHaveBeenCalledWith(
+      'events-query',
+      expect.any(Function),
+      expect.any(Function)
+    );
   });
 
   it('shows the empty state when there are no events', () => {
@@ -149,7 +170,7 @@ describe('Events Page', () => {
 
     expect(
       screen.getByRole('link', {
-        name: /Sign in with your college account/i,
+        name: /Sign in with your college account/i
       })
     ).toHaveAttribute('href', '/login');
 
@@ -184,23 +205,23 @@ describe('Events Page', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'AI Workshop' },
+      target: { value: 'AI Workshop' }
     });
 
     fireEvent.change(screen.getByLabelText('Date'), {
-      target: { value: '2026-12-15' },
+      target: { value: '2026-12-15' }
     });
 
     fireEvent.change(screen.getByLabelText('Time'), {
-      target: { value: '11:30' },
+      target: { value: '11:30' }
     });
 
     fireEvent.change(screen.getByLabelText('Location'), {
-      target: { value: 'Seminar Hall' },
+      target: { value: 'Seminar Hall' }
     });
 
     fireEvent.change(screen.getByLabelText('Description'), {
-      target: { value: 'Learn about artificial intelligence.' },
+      target: { value: 'Learn about artificial intelligence.' }
     });
 
     fireEvent.click(
@@ -219,7 +240,7 @@ describe('Events Page', () => {
       time: '11:30',
       location: 'Seminar Hall',
       description: 'Learn about artificial intelligence.',
-      ownerId: 'student123',
+      ownerId: 'student123'
     });
 
     expect(await screen.findByRole('status')).toHaveTextContent(
@@ -231,7 +252,7 @@ describe('Events Page', () => {
     mocks.auth.currentUser = {
       uid: 'user1',
       email: 'user@gmail.com',
-      emailVerified: true,
+      emailVerified: true
     };
 
     renderEvents();
@@ -241,15 +262,15 @@ describe('Events Page', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'Workshop' },
+      target: { value: 'Workshop' }
     });
 
     fireEvent.change(screen.getByLabelText('Date'), {
-      target: { value: '2026-12-15' },
+      target: { value: '2026-12-15' }
     });
 
     fireEvent.change(screen.getByLabelText('Location'), {
-      target: { value: 'Auditorium' },
+      target: { value: 'Auditorium' }
     });
 
     fireEvent.click(
@@ -271,7 +292,7 @@ describe('Events Page', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: '   ' },
+      target: { value: '   ' }
     });
 
     fireEvent.submit(
@@ -309,7 +330,7 @@ describe('Events Page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
 
     fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'Updated Workshop' },
+      target: { value: 'Updated Workshop' }
     });
 
     fireEvent.click(
@@ -331,14 +352,11 @@ describe('Events Page', () => {
     mocks.onSnapshot.mockImplementation((query, success) => {
       success({
         docs: [
-          {
-            id: 'other-event',
-            data: () => ({
-              ...sampleEvent,
-              ownerId: 'another-user',
-            }),
-          },
-        ],
+          makeDocument('other-event', {
+            ...sampleEvent,
+            ownerId: 'another-user'
+          })
+        ]
       });
 
       return vi.fn();
@@ -402,15 +420,15 @@ describe('Events Page', () => {
     );
 
     fireEvent.change(screen.getByLabelText('Event title'), {
-      target: { value: 'Workshop' },
+      target: { value: 'Workshop' }
     });
 
     fireEvent.change(screen.getByLabelText('Date'), {
-      target: { value: '2026-12-15' },
+      target: { value: '2026-12-15' }
     });
 
     fireEvent.change(screen.getByLabelText('Location'), {
-      target: { value: 'Auditorium' },
+      target: { value: 'Auditorium' }
     });
 
     fireEvent.click(
@@ -434,5 +452,74 @@ describe('Events Page', () => {
     expect(
       screen.queryByRole('heading', { name: 'Create Event' })
     ).not.toBeInTheDocument();
+  });
+
+  it('loads the next page only when Load More Events is clicked', async () => {
+    const firstPage = Array.from({ length: 12 }, (_, index) =>
+      makeDocument(`event-${index + 1}`, {
+        ...sampleEvent,
+        title: `Event ${index + 1}`
+      })
+    );
+
+    mocks.onSnapshot.mockImplementation((query, success) => {
+      success({ docs: firstPage });
+      return vi.fn();
+    });
+
+    const nextPage = [
+      makeDocument('event-13', {
+        ...sampleEvent,
+        title: 'Event 13'
+      })
+    ];
+
+    mocks.getDocs.mockResolvedValue({ docs: nextPage });
+
+    renderEvents();
+
+    expect(screen.getAllByTestId('event-card')).toHaveLength(12);
+    expect(mocks.getDocs).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Load More Events' })
+    );
+
+    expect(await screen.findByText('Event 13')).toBeInTheDocument();
+    expect(screen.getAllByTestId('event-card')).toHaveLength(13);
+
+    expect(mocks.getDocs).toHaveBeenCalledWith('events-query');
+    expect(mocks.startAfter).toHaveBeenCalledWith(firstPage[11]);
+  });
+
+  it('hides Load More Events when the first page has fewer than 12 events', () => {
+    renderEvents();
+
+    expect(
+      screen.queryByRole('button', { name: 'Load More Events' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows an error if loading the next page fails', async () => {
+    const firstPage = Array.from({ length: 12 }, (_, index) =>
+      makeDocument(`event-${index + 1}`)
+    );
+
+    mocks.onSnapshot.mockImplementation((query, success) => {
+      success({ docs: firstPage });
+      return vi.fn();
+    });
+
+    mocks.getDocs.mockRejectedValue(new Error('Network error'));
+
+    renderEvents();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Load More Events' })
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load more events. Please try again.'
+    );
   });
 });

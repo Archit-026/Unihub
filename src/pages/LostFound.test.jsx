@@ -47,6 +47,10 @@ vi.mock('../firebase', () => ({
   db: {},
 }));
 
+vi.mock('../firestore', () => ({
+  db: {},
+}));
+
 describe('LostFound Page', () => {
   const sampleReports = [
     {
@@ -148,7 +152,7 @@ describe('LostFound Page', () => {
     render(<LostFound />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Could not load reports. Check your Firestore rules and internet connection.'
+      'Unable to connect to Lost & Found. Please check your internet connection and try again.'
     );
   });
 

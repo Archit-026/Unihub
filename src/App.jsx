@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import {
   BrowserRouter as Router,
   Routes,
@@ -11,16 +11,18 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ThemeProvider } from './context/ThemeContext';
 import { auth } from './firebase';
 
-import Login from './pages/Login';
 import Navbar from './components/Navbar';
-import Home from './pages/Home';
-import Marketplace from './pages/Marketplace';
-import LostFound from './pages/LostFound';
-import Events from './pages/Events';
-import Dashboard from './pages/Dashboard';
-import Profile from './pages/Profile';
-import Help from './pages/Help';
-import SkillSwap from './pages/SkillSwap';
+
+// Lazy-loaded pages
+const Login = lazy(() => import('./pages/Login'));
+const Home = lazy(() => import('./pages/Home'));
+const Marketplace = lazy(() => import('./pages/Marketplace'));
+const LostFound = lazy(() => import('./pages/LostFound'));
+const Events = lazy(() => import('./pages/Events'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Help = lazy(() => import('./pages/Help'));
+const SkillSwap = lazy(() => import('./pages/SkillSwap'));
 
 const publicPaths = [
   '/',
@@ -29,6 +31,14 @@ const publicPaths = [
   '/events',
   '/help'
 ];
+
+function PageLoader() {
+  return (
+    <div className="page">
+      <p>Loading UniHub...</p>
+    </div>
+  );
+}
 
 function ProtectedApp() {
   const [user, setUser] = useState(undefined);
@@ -47,6 +57,7 @@ function ProtectedApp() {
         } catch (error) {
           console.error('Sign-out failed:', error);
         }
+
         setUser(null);
         return;
       }
@@ -58,11 +69,7 @@ function ProtectedApp() {
   }, []);
 
   if (user === undefined) {
-    return (
-      <div className="page">
-        <p>Loading UniHub...</p>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const isPublicPath = publicPaths.includes(location.pathname);
@@ -79,19 +86,22 @@ function ProtectedApp() {
   return (
     <div className="app">
       <Navbar />
+
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/marketplace" element={<Marketplace />} />
-          <Route path="/lost-found" element={<LostFound />} />
-          <Route path="/events" element={<Events />} />
-          <Route path="/help" element={<Help />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/learners" element={<SkillSwap />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/lost-found" element={<LostFound />} />
+            <Route path="/events" element={<Events />} />
+            <Route path="/help" element={<Help />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/learners" element={<SkillSwap />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

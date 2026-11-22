@@ -10,8 +10,13 @@ const mocks = vi.hoisted(() => ({
   deleteDoc: vi.fn(),
   deleteField: vi.fn(),
   doc: vi.fn(),
+  documentId: vi.fn(),
+  getDocs: vi.fn(),
+  limit: vi.fn(),
   onSnapshot: vi.fn(),
+  orderBy: vi.fn(),
   query: vi.fn(),
+  startAfter: vi.fn(),
   updateDoc: vi.fn(),
   auth: {
     currentUser: {
@@ -28,13 +33,22 @@ vi.mock('firebase/firestore', () => ({
   deleteDoc: mocks.deleteDoc,
   deleteField: mocks.deleteField,
   doc: mocks.doc,
+  documentId: mocks.documentId,
+  getDocs: mocks.getDocs,
+  limit: mocks.limit,
   onSnapshot: mocks.onSnapshot,
+  orderBy: mocks.orderBy,
   query: mocks.query,
+  startAfter: mocks.startAfter,
   updateDoc: mocks.updateDoc,
 }));
 
 vi.mock('../firebase', () => ({
   auth: mocks.auth,
+  db: {},
+}));
+
+vi.mock('../firestore', () => ({
   db: {},
 }));
 
@@ -98,6 +112,12 @@ describe('Marketplace Page', () => {
     },
   ];
 
+  const makeDocs = products =>
+    products.map(product => ({
+      id: product.id,
+      data: () => ({ ...product }),
+    }));
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -110,18 +130,23 @@ describe('Marketplace Page', () => {
     mocks.collection.mockReturnValue({});
     mocks.query.mockReturnValue({});
     mocks.doc.mockReturnValue({});
+    mocks.documentId.mockReturnValue('documentId');
+    mocks.limit.mockImplementation(value => value);
+    mocks.orderBy.mockReturnValue('orderBy');
+    mocks.startAfter.mockReturnValue('startAfter');
     mocks.deleteField.mockReturnValue('DELETE_FIELD');
 
     mocks.addDoc.mockResolvedValue({});
     mocks.updateDoc.mockResolvedValue();
     mocks.deleteDoc.mockResolvedValue();
 
+    mocks.getDocs.mockResolvedValue({
+      docs: makeDocs(sampleProducts),
+    });
+
     mocks.onSnapshot.mockImplementation((query, success) => {
       success({
-        docs: sampleProducts.map(product => ({
-          id: product.id,
-          data: () => ({ ...product }),
-        })),
+        docs: makeDocs(sampleProducts),
       });
       return vi.fn();
     });
@@ -164,27 +189,44 @@ describe('Marketplace Page', () => {
     expect(mocks.collection).toHaveBeenCalledWith({}, 'marketplace');
   });
 
-  it('filters products by search term', () => {
+  it('filters products by search term', async () => {
     renderMarketplace();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Search products' }), {
       target: { value: 'calculator' },
     });
 
-    expect(screen.getByText('Scientific Calculator')).toBeInTheDocument();
-    expect(screen.queryByText('Engineering Mathematics Book')).not.toBeInTheDocument();
+    expect(await screen.findByText('Scientific Calculator')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.queryByText('Engineering Mathematics Book'))
+        .not.toBeInTheDocument();
+    });
+
+    expect(mocks.getDocs).toHaveBeenCalled();
   });
 
-  it('filters products by category', () => {
+  it('filters products by category', async () => {
     renderMarketplace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Books', exact: true }));
 
-    expect(screen.getByText('Engineering Mathematics Book')).toBeInTheDocument();
-    expect(screen.queryByText('Scientific Calculator')).not.toBeInTheDocument();
+    expect(await screen.findByText('Engineering Mathematics Book'))
+      .toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.queryByText('Scientific Calculator'))
+        .not.toBeInTheDocument();
+    });
+
+    expect(mocks.getDocs).toHaveBeenCalled();
   });
 
-  it('shows an empty message when no products match', () => {
+  it('shows an empty message when no products match', async () => {
+    mocks.getDocs.mockResolvedValue({
+      docs: [],
+    });
+
     renderMarketplace();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Search products' }), {
@@ -192,7 +234,7 @@ describe('Marketplace Page', () => {
     });
 
     expect(
-      screen.getByText('No listings match your search or category.')
+      await screen.findByText('No listings match your search or category.')
     ).toBeInTheDocument();
   });
 
@@ -357,7 +399,7 @@ describe('Marketplace Page', () => {
       .toHaveTextContent('Listing updated successfully.');
   });
 
-  it('prevents editing a listing owned by another user', async () => {
+  it('prevents editing a listing owned by another user', () => {
     mocks.onSnapshot.mockImplementation((query, success) => {
       success({
         docs: [{
@@ -472,5 +514,56 @@ describe('Marketplace Page', () => {
 
     expect(screen.queryByRole('heading', { name: 'Create Listing' }))
       .not.toBeInTheDocument();
+  });
+
+  it('loads the first page with the configured page size', () => {
+    renderMarketplace();
+
+    expect(mocks.documentId).toHaveBeenCalled();
+    expect(mocks.orderBy).toHaveBeenCalled();
+    expect(mocks.limit).toHaveBeenCalledWith(12);
+  });
+
+  it('loads the next page when Load More Listings is clicked', async () => {
+    const firstPage = Array.from({ length: 12 }, (_, index) => ({
+      id: `p${index + 1}`,
+      title: `Product ${index + 1}`,
+      category: 'Books',
+      price: 100,
+      description: 'Test product',
+      ownerId: 'another-user',
+    }));
+
+    const nextProduct = {
+      id: 'p13',
+      title: 'Product 13',
+      category: 'Books',
+      price: 100,
+      description: 'Test product',
+      ownerId: 'another-user',
+    };
+
+    mocks.onSnapshot.mockImplementation((query, success) => {
+      success({
+        docs: makeDocs(firstPage),
+      });
+      return vi.fn();
+    });
+
+    mocks.getDocs.mockResolvedValue({
+      docs: makeDocs([nextProduct]),
+    });
+
+    renderMarketplace();
+
+    expect(await screen.findByText('Product 12')).toBeInTheDocument();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Load More Listings' })
+    );
+
+    expect(await screen.findByText('Product 13')).toBeInTheDocument();
+    expect(mocks.getDocs).toHaveBeenCalled();
+    expect(mocks.startAfter).toHaveBeenCalled();
   });
 });
